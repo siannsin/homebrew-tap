@@ -1,0 +1,80 @@
+name: Bump FreshBrew
+
+on:
+  repository_dispatch:
+    types:
+      - freshbrew_release_published
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-freshbrew
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate release payload
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          SHA256: ${{ github.event.client_payload.sha256 }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release version: $VERSION" >&2
+            exit 1
+          fi
+
+          if [[ ! "$SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "Invalid DMG SHA-256." >&2
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "SHA256=$SHA256" >> "$GITHUB_ENV"
+
+      - name: Update FreshBrew cask
+        run: |
+          CASK="Casks/freshbrew.rb"
+
+          if [[ "$(grep -Ec '^  version "[^"]+"$' "$CASK")" -ne 1 ]]; then
+            echo "Expected exactly one version stanza." >&2
+            exit 1
+          fi
+
+          if [[ "$(grep -Ec '^  sha256 "[0-9a-f]{64}"$' "$CASK")" -ne 1 ]]; then
+            echo "Expected exactly one SHA-256 stanza." >&2
+            exit 1
+          fi
+
+          sed -i "s/^  version \"[^\"]*\"$/  version \"$VERSION\"/" "$CASK"
+          sed -i "s/^  sha256 \"[0-9a-f]\{64\}\"$/  sha256 \"$SHA256\"/" "$CASK"
+          ruby -c "$CASK"
+
+      - name: Verify release artifact
+        run: |
+          DMG="$RUNNER_TEMP/FreshBrew-$VERSION-universal.dmg"
+          URL="https://github.com/siannsin/FreshBrew/releases/download/v$VERSION/FreshBrew-$VERSION-universal.dmg"
+
+          curl --fail --location --retry 3 --retry-all-errors --output "$DMG" "$URL"
+          printf '%s  %s\n' "$SHA256" "$DMG" | sha256sum --check
+
+      - name: Commit and push
+        run: |
+          if git diff --quiet -- Casks/freshbrew.rb; then
+            echo "FreshBrew $VERSION is already current."
+            exit 0
+          fi
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/freshbrew.rb
+          git commit -m "freshbrew $VERSION"
+          git push origin HEAD:main
