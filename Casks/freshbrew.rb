@@ -1,6 +1,6 @@
 cask "freshbrew" do
-  version "0.2.0"
-  sha256 "80508295046c658882dbdb58c0d21739b2afa740fc0d03c1ca18dc1c666ee18e"
+  version "0.3.0"
+  sha256 "851b3edc92eb5682e69d236e18ff56d518c43ecec61dc7aaa62e40fa9044b71e"
 
   url "https://github.com/siannsin/FreshBrew/releases/download/v#{version}/FreshBrew-#{version}-universal.dmg"
   name "FreshBrew"
